@@ -6,7 +6,9 @@ and then fixes **every** finding zizmor surfaces in the existing workflows.
 
 zizmor runs in `pedantic` mode, so the bar is high. The skill drives an agent to:
 
-- add a `zizmor` workflow (`.github/workflows/zizmor.yml`) and a `dependabot.yml`,
+- add a `zizmor` workflow (`.github/workflows/zizmor.yml`) and a `dependabot.yml` — the latter on
+  the default branch only, since dependabot ignores it on other branches; a non-default branch is
+  covered by a `target-branch` entry added to the default branch's `dependabot.yml`,
 - run zizmor and iterate until it reports **no findings** — pinning actions to commit SHAs at
   their latest release, tightening and documenting `permissions`, adding `concurrency`,
   setting `persist-credentials`, removing template injection, replacing `$GITHUB_ENV` writes
@@ -22,7 +24,7 @@ of hiding it.
 ```
 SKILL.md                  # the skill instructions (frontmatter + playbook)
 assets/zizmor.yml         # the workflow that gets added to target repos
-assets/dependabot.yml     # the dependabot config that gets added
+assets/dependabot.yml     # the dependabot config added on the default branch
 ```
 
 ## Install

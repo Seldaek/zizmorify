@@ -4,8 +4,9 @@ description: >-
   Add zizmor (GitHub Actions security analysis) CI to a repository and fix every
   finding it surfaces. Use when asked to "add zizmor", harden a repo's GitHub
   Actions workflows, pin actions to SHAs, or make workflows pass a security
-  audit. Adds a zizmor workflow + a dependabot config, then iterates locally
-  until zizmor reports no findings, and opens a PR.
+  audit. Adds a zizmor workflow + a dependabot config (on the default branch;
+  other branches are covered via a dependabot `target-branch` entry there),
+  then iterates locally until zizmor reports no findings, and opens a PR.
 ---
 
 # Add zizmor CI and fix all findings
@@ -53,6 +54,9 @@ Detect what's available and pick the best feedback loop, in this order:
 
 1. **Create a branch off the latest default branch:**
    `git fetch origin && git switch -c add-zizmor-dependabot origin/<default-branch>`.
+   Note the **default branch name** (e.g. `git remote show origin | sed -n 's/.*HEAD branch: //p'`)
+   and the **branch you're targeting** — steps 3, 6, and 8 behave differently when the target is
+   *not* the default branch (dependabot only runs on the default branch).
 
 2. **Add the zizmor workflow.** Copy `assets/zizmor.yml` to `.github/workflows/zizmor.yml`.
    - **Match the repo's indentation.** Inspect an existing workflow file and detect its
@@ -62,11 +66,42 @@ Detect what's available and pick the best feedback loop, in this order:
      For a maintenance branch, set the pushed branch accordingly.
    - If the repo has no other workflows, the template is fine as-is.
 
-3. **Add / update dependabot.**
+3. **Add / update dependabot.** Dependabot **only reads `.github/dependabot.yml` from the default
+   branch** — a copy committed to any other branch is silently ignored. So how you handle dependabot
+   depends on whether the branch you're targeting is the default branch:
+
+   **a. Targeting the default branch** (the common case):
    - No `.github/dependabot.yml` → copy `assets/dependabot.yml`.
    - Existing one that lacks a `cooldown` → add `cooldown:\n  default-days: 7` under the
      `github-actions` update block. Keep the repo's existing `interval` (don't increase
      update frequency on rarely-touched repos).
+
+   **b. Targeting a non-default branch** (e.g. a maintenance branch): do **not** add or modify
+   `dependabot.yml` on this branch — keep it out of the zizmor branch/PR entirely (it would never
+   run there). Instead, dependabot coverage for this branch is configured on the **default branch**
+   by adding a second `github-actions` update block scoped to it with `target-branch`:
+   ```yaml
+   - package-ecosystem: "github-actions"
+     directory: "/"
+     target-branch: "<the-branch-you-zizmorified>"
+     schedule:
+       interval: "weekly"
+     cooldown:
+       default-days: 7
+   ```
+   Append this **alongside** (never replacing) the default branch's existing github-actions block. If
+   the default branch has no `dependabot.yml` at all, create one from `assets/dependabot.yml` and add
+   this `target-branch` block in addition to the default `directory: "/"` block.
+
+   Deliver this default-branch change based on what's available:
+   - **`gh` available & authenticated** → create a separate branch off `origin/<default-branch>`
+     (e.g. `add-dependabot-<branch>`), apply only the `dependabot.yml` edit, commit, and open a
+     **separate PR** against the default branch — independent of the zizmor PR for the maintenance
+     branch.
+   - **No `gh`** (local-only) → don't touch the default branch; hand off by telling the user the
+     exact `target-branch` block to add to `dependabot.yml` on the default branch.
+   - **When it's ambiguous** (unsure which branch is default, or whether the extra default-branch PR
+     is wanted) → ask the user before opening it.
 
 4. **Get zizmor's findings** using the best available loop (see *Tooling* above): run it locally if
    you can; otherwise push and read the workflow run via `gh`; otherwise apply the playbook fixes
@@ -79,7 +114,8 @@ Detect what's available and pick the best feedback loop, in this order:
    (`python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/**/*.y*ml', recursive=True)]"`).
 
 6. **Commit** on the branch:
-   - Commit 1: add `zizmor.yml` + `dependabot.yml`.
+   - Commit 1: add `zizmor.yml` (plus `dependabot.yml` **only when targeting the default branch** —
+     for a non-default branch dependabot is handled by the separate default-branch change in step 3b).
    - Commit 2: "Harden existing workflows to pass zizmor".
 
 7. **Push & open the PR** — *if `gh` is available*: `git push -u origin add-zizmor-dependabot` then
@@ -87,8 +123,11 @@ Detect what's available and pick the best feedback loop, in this order:
    (`gh pr checks <n>` / `gh run list --workflow zizmor.yml`). *If `gh` is not available*: stop after
    committing and tell the user to push and open the PR themselves.
 
-8. **Repeat per maintained branch** if requested — one PR per branch, each with the zizmor
-   `push` trigger scoped to that branch.
+8. **Repeat per maintained branch** if requested — one zizmor PR per branch, each with the zizmor
+   `push` trigger scoped to that branch and **without** a `dependabot.yml` (per step 3b). Each
+   maintained branch instead gets its own `target-branch` entry in the single `dependabot.yml` on
+   the default branch — consolidate these into one default-branch PR when zizmorifying several
+   branches at once, rather than one dependabot PR per branch.
 
 ## Hard rules
 
